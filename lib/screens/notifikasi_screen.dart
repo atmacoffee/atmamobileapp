@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../service/api_service.dart';
 import '../theme/app_theme.dart';
@@ -158,7 +159,12 @@ class _NotifikasiScreenState extends State<NotifikasiScreen> {
                       iconColor: AppTheme.danger,
                     )
                   : RefreshIndicator(
-                      onRefresh: refreshNotifications,
+                      onRefresh: () async {
+                        HapticFeedback.lightImpact();
+                        await refreshNotifications();
+                      },
+                      color: AppTheme.primary,
+                      backgroundColor: AppTheme.surface,
                       child: _notifications.isEmpty
                           ? LayoutBuilder(
                               builder: (context, constraints) {

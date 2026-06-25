@@ -5,10 +5,12 @@ import '../core/config/app_config.dart';
 import '../service/api_service.dart';
 import '../theme/app_theme.dart';
 import 'notifikasi_screen.dart';
-import '../widgets/app_loading_view.dart';
 import '../widgets/app_page_header.dart';
 import '../widgets/app_state_view.dart';
 import '../widgets/app_surface.dart';
+import '../widgets/app_skeleton.dart';
+import 'package:flutter/services.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key, required this.isActive});
@@ -45,11 +47,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _tickerTimer;
 
   int chartIndex = 0;
+  int historySize = 50;
 
   Future<void> loadChartHistory() async {
     try {
       final results = await Future.wait([
-        ApiService.getRiwayatSensor(),
+        ApiService.getRiwayatSensor(size: historySize),
         ApiService.getFirstSensor(),
       ]);
 
@@ -97,11 +100,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _syncPolling() {
     if (widget.isActive) {
+      WakelockPlus.enable();
       _fetchTimer ??= Timer.periodic(
         AppConfig.dashboardPollingInterval,
         (timer) => fetchData(),
       );
-      _tickerTimer ??= Timer.periodic(const Duration(seconds: 1), (timer) {
+      _tickerTimer ??= Timer.periodic(const Duration(minutes: 1), (timer) {
         if (!mounted || isLoading || errorMsg != null) {
           return;
         }
@@ -115,13 +119,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _stopPolling() {
+    WakelockPlus.disable();
     _fetchTimer?.cancel();
     _tickerTimer?.cancel();
     _fetchTimer = null;
     _tickerTimer = null;
   }
 
-  void fetchData() async {
+  Future<void> fetchData() async {
     try {
       final data = await ApiService.getLatestSensor();
       final deviceStatus = await ApiService.getDeviceStatus();
@@ -369,7 +374,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       backgroundColor: AppTheme.background,
       body: SafeArea(
         child: isLoading
-            ? const AppLoadingView(label: 'Menyiapkan dashboard...')
+            ? const DashboardSkeleton()
             : (errorMsg != null)
             ? AppStateView(
                 icon: Icons.cloud_off,
@@ -379,17 +384,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 onAction: fetchData,
                 iconColor: AppTheme.danger,
               )
-            : ListView(
-                children: [
-                  buildHeader(),
-                  buildTopCards(),
-                  buildModeStatusCard(),
-                  buildChart(),
-                  buildHumidityChart(),
-                  buildProgress(),
-                  buildActivity(),
-                  const SizedBox(height: 24),
-                ],
+            : RefreshIndicator(
+                onRefresh: () async {
+                  HapticFeedback.lightImpact();
+                  await fetchData();
+                },
+                color: AppTheme.primary,
+                backgroundColor: AppTheme.surface,
+                child: ListView(
+                  children: [
+                    buildHeader(),
+                    buildTopCards(),
+                    buildModeStatusCard(),
+                    buildFilter(),
+                    buildChart(),
+                    buildHumidityChart(),
+                    buildProgress(),
+                    buildActivity(),
+                    const SizedBox(height: 24),
+                  ],
+                ),
               ),
       ),
     );
@@ -614,8 +628,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Icons.local_fire_department,
                 heater ? "Aktif" : "Mati",
                 "Heater",
-                heater ? Colors.red : Colors.grey,
-                heater ? const Color(0xFFFFEBEE) : const Color(0xFFF5F5F5),
+                heater ? AppTheme.danger : AppTheme.textSecondary,
+                heater ? AppTheme.danger.withValues(alpha: 0.1) : AppTheme.surfaceMuted,
               ),
             ),
             Expanded(
@@ -623,8 +637,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Icons.wind_power,
                 kipas ? "Aktif" : "Mati",
                 "Kipas",
-                kipas ? Colors.blue : Colors.grey,
-                kipas ? const Color(0xFFE3F2FD) : const Color(0xFFF5F5F5),
+                kipas ? AppTheme.info : AppTheme.textSecondary,
+                kipas ? AppTheme.info.withValues(alpha: 0.1) : AppTheme.surfaceMuted,
               ),
             ),
             Expanded(
@@ -632,8 +646,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 Icons.mode_fan_off,
                 exhaust ? "Aktif" : "Mati",
                 "Exhaust",
-                exhaust ? const Color(0xFF6A1B9A) : Colors.grey,
-                exhaust ? const Color(0xFFF3E5F5) : const Color(0xFFF5F5F5),
+                exhaust ? const Color(0xFF6A1B9A) : AppTheme.textSecondary,
+                exhaust ? const Color(0xFFF3E5F5) : AppTheme.surfaceMuted,
               ),
             ),
           ],
@@ -680,6 +694,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   // ================= GRAFIK =================
+
+  Widget buildFilter() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text(
+            "Filter Histori Grafik",
+            style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.textSecondary, fontSize: 13),
+          ),
+          DropdownButton<int>(
+            value: historySize,
+            underline: const SizedBox(),
+            icon: const Icon(Icons.arrow_drop_down, color: AppTheme.primary),
+            style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold, fontSize: 13),
+            items: const [
+              DropdownMenuItem(value: 50, child: Text("4 Jam Terakhir")),
+              DropdownMenuItem(value: 144, child: Text("12 Jam Terakhir")),
+              DropdownMenuItem(value: 288, child: Text("24 Jam Terakhir")),
+            ],
+            onChanged: (val) {
+              if (val != null && val != historySize) {
+                HapticFeedback.lightImpact();
+                setState(() {
+                  historySize = val;
+                  isLoading = true;
+                });
+                loadChartHistory();
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget buildChart() {
     return _buildChartCard(
@@ -863,8 +913,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             borderRadius: BorderRadius.circular(99),
             child: LinearProgressIndicator(
               value: getProgress(),
-              backgroundColor: const Color(0xFFE8F5E9),
-              color: const Color(0xFF4CAF50),
+              backgroundColor: AppTheme.success.withValues(alpha: 0.1),
+              color: AppTheme.success,
               minHeight: 10,
             ),
           ),
@@ -882,7 +932,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Text(
                 getProgressText(),
                 style: const TextStyle(
-                  color: Color(0xFF2E7D32),
+                  color: AppTheme.success,
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
                 ),
@@ -941,7 +991,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             width: 6,
             height: 6,
             decoration: const BoxDecoration(
-              color: Color(0xFF4CAF50),
+              color: AppTheme.success,
               shape: BoxShape.circle,
             ),
           ),

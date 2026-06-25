@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -110,20 +112,37 @@ class ApiService {
     );
   }
 
+  static Never _handleNetworkError(Object e) {
+    if (e is SocketException) {
+      throw const ApiException('Tidak ada koneksi internet. Silakan periksa koneksi Anda.');
+    }
+    if (e is TimeoutException) {
+      throw const ApiException('Koneksi ke server terputus (Timeout). Silakan coba lagi.');
+    }
+    if (e is ApiException) {
+      throw e;
+    }
+    throw ApiException('Terjadi kesalahan jaringan: ${e.toString().replaceAll("Exception: ", "")}');
+  }
+
   static Future<http.Response> _get(
     String path, {
     Map<String, String>? queryParameters,
     bool authenticated = true,
   }) async {
-    return _client
-        .get(
-          _uri(path, queryParameters),
-          headers:
-              authenticated
-                  ? await _authHeaders()
-                  : const {'Content-Type': 'application/json'},
-        )
-        .timeout(AppConfig.requestTimeout);
+    try {
+      return await _client
+          .get(
+            _uri(path, queryParameters),
+            headers:
+                authenticated
+                    ? await _authHeaders()
+                    : const {'Content-Type': 'application/json'},
+          )
+          .timeout(AppConfig.requestTimeout);
+    } catch (e) {
+      _handleNetworkError(e);
+    }
   }
 
   static Future<http.Response> _post(
@@ -131,42 +150,54 @@ class ApiService {
     Map<String, dynamic>? body,
     bool authenticated = true,
   }) async {
-    return _client
-        .post(
-          _uri(path),
-          headers:
-              authenticated
-                  ? await _authHeaders()
-                  : const {'Content-Type': 'application/json'},
-          body: jsonEncode(body ?? const <String, dynamic>{}),
-        )
-        .timeout(AppConfig.requestTimeout);
+    try {
+      return await _client
+          .post(
+            _uri(path),
+            headers:
+                authenticated
+                    ? await _authHeaders()
+                    : const {'Content-Type': 'application/json'},
+            body: jsonEncode(body ?? const <String, dynamic>{}),
+          )
+          .timeout(AppConfig.requestTimeout);
+    } catch (e) {
+      _handleNetworkError(e);
+    }
   }
 
   static Future<http.Response> _put(
     String path, {
     required Map<String, dynamic> body,
   }) async {
-    return _client
-        .put(
-          _uri(path),
-          headers: await _authHeaders(),
-          body: jsonEncode(body),
-        )
-        .timeout(AppConfig.requestTimeout);
+    try {
+      return await _client
+          .put(
+            _uri(path),
+            headers: await _authHeaders(),
+            body: jsonEncode(body),
+          )
+          .timeout(AppConfig.requestTimeout);
+    } catch (e) {
+      _handleNetworkError(e);
+    }
   }
 
   static Future<http.Response> _patch(
     String path, {
     Map<String, dynamic>? body,
   }) async {
-    return _client
-        .patch(
-          _uri(path),
-          headers: await _authHeaders(),
-          body: jsonEncode(body ?? const <String, dynamic>{}),
-        )
-        .timeout(AppConfig.requestTimeout);
+    try {
+      return await _client
+          .patch(
+            _uri(path),
+            headers: await _authHeaders(),
+            body: jsonEncode(body ?? const <String, dynamic>{}),
+          )
+          .timeout(AppConfig.requestTimeout);
+    } catch (e) {
+      _handleNetworkError(e);
+    }
   }
 
   static Future<String?> getToken() => SecureTokenStorage.readToken();
@@ -432,12 +463,12 @@ class ApiService {
     return _normalizeSensor(data);
   }
 
-  static Future<List<dynamic>> getRiwayatSensor() async {
+  static Future<List<dynamic>> getRiwayatSensor({int size = 50}) async {
     final response = await _get(
       '/sensor',
       queryParameters: {
         'page': '0',
-        'size': '50',
+        'size': '$size',
         'sort': 'createdAt,desc',
       },
     );

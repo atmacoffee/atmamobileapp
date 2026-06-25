@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 
 import '../core/config/app_config.dart';
@@ -109,6 +110,7 @@ class _KontrolScreenState extends State<KontrolScreen> {
 
   Future<void> _toggleActuator(String actuator, bool currentValue) async {
     if (isSubmitting || (mode == 'AUTO')) return;
+    HapticFeedback.lightImpact();
     setState(() => isSubmitting = true);
     try {
       await ApiService.setActuator(actuator, !currentValue);
@@ -128,6 +130,7 @@ class _KontrolScreenState extends State<KontrolScreen> {
 
   Future<void> _confirmModeChange(String newMode) async {
     if (isSubmitting || mode == newMode) return;
+    HapticFeedback.lightImpact();
 
     final confirmed = await _showConfirmationDialog(
       icon: newMode == 'AUTO' ? Icons.autorenew_rounded : Icons.touch_app_rounded,
@@ -231,7 +234,12 @@ class _KontrolScreenState extends State<KontrolScreen> {
                 iconColor: AppTheme.danger,
               )
             : RefreshIndicator(
-                onRefresh: _loadStatus,
+                onRefresh: () async {
+                  HapticFeedback.lightImpact();
+                  await _loadStatus();
+                },
+                color: AppTheme.primary,
+                backgroundColor: AppTheme.surface,
                 child: ListView(
                   children: [
                     _buildHeader(),
